@@ -19,7 +19,7 @@ import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.core.view.WindowCompat
 
-import com.mikepenz.aboutlibraries.ui.compose.rememberLibraries
+import com.mikepenz.aboutlibraries.ui.compose.produceLibraries
 import com.mikepenz.aboutlibraries.ui.compose.m3.LibrariesContainer
 
 import net.syncthing.lite.R
@@ -45,11 +45,11 @@ fun LicenseScreen() {
             val backDispatcher = LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
             val resources = LocalResources.current
             
-            // Read the libraries content outside of rememberLibraries to avoid the lint warning
+            // Read the libraries content outside of produceLibraries to avoid the lint warning
             val librariesContent = remember {
                 resources.openRawResource(R.raw.aboutlibraries).bufferedReader().use { it.readText() }
             }
-            val libraries by rememberLibraries(librariesContent)
+            val libraries by produceLibraries(librariesContent)
 
             Scaffold(
             ) { paddingValues ->
