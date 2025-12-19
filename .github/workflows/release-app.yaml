@@ -8,7 +8,7 @@ on:
     inputs:
       tag:
         description: 'Tag to publish (e.g. v1.0.0.0 or v1.0.0.0-rc.1)'
-        required: false
+        required: true
 
 concurrency:
   group: release-app
@@ -26,7 +26,6 @@ jobs:
           ref: ${{ inputs.checkoutRef }}
 
       - name: Ensure release branch
-        if: false
         run: |
           git config --global --add safe.directory '*'
           if ! git branch -a --contains $(git rev-parse HEAD) | grep release >/dev/null; then
