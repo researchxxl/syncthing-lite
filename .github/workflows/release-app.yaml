@@ -8,21 +8,25 @@ on:
     inputs:
       tag:
         description: 'Tag to publish (e.g. v1.0.0.0 or v1.0.0.0-rc.1)'
-        required: true
+        required: false
+
+concurrency:
+  group: release-app
+  cancel-in-progress: true
 
 jobs:
-  release:
-    name: Release Build and Publish
+  prepare:
+    name: Prepare
     runs-on: ubuntu-latest
-    environment: prod
     steps:
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - name: Code checkout
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
-          submodules: true
           fetch-depth: 0
-          ref: ${{ github.event.inputs.tag }}
+          ref: ${{ inputs.checkoutRef }}
 
       - name: Ensure release branch
+        if: false
         run: |
           git config --global --add safe.directory '*'
           if ! git branch -a --contains $(git rev-parse HEAD) | grep release >/dev/null; then
@@ -30,88 +34,49 @@ jobs:
             exit 1
           fi
 
-      - name: Set up Java
-        uses: actions/setup-java@f2beeb24e141e01a676f977032f5a29d81c9e27e # v5.1.0
+  build:
+    name: Build
+    needs: prepare
+    uses: ./.github/workflows/common-build.yaml
+    with:
+      buildType: "Release"
+      checkoutRef: ${{ github.event.inputs.tag }}
+
+  sign:
+    name: Sign
+    needs: [prepare, build]
+    uses: ./.github/workflows/common-sign.yaml
+    with:
+      applicationId: "com.github.catfriend1.syncthinglite"
+      buildType: "release"
+      environmentName: prod
+    secrets: inherit
+
+  release:
+    name: Create release and attach artifacts
+    needs: sign
+    if: ${{ github.event.inputs.tag != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Code checkout
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
-          distribution: 'temurin'
-          java-version: '21'
+          fetch-depth: 0
+          ref: ${{ github.event.inputs.tag }}
 
-      - name: Get Android cmdline-tools version from gradle catalog
-        id: get_cmdline_tools_version
-        run: |
-          set -eu
-          CMDLINE_TOOLS_VERSION=$(grep 'android-cmdline-tools = ' gradle/libs.versions.toml | cut -d '"' -f 2)
-          echo "cmdline_tools_version=${CMDLINE_TOOLS_VERSION}" >> $GITHUB_OUTPUT
+      - name: "Download sign"
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        with:
+          name: signed-com.github.catfriend1.syncthinglite
+          path: ./artifacts
 
-      - name: Install Android SDK
-        run: |
-          set -eu
-          # Set environment variables
-          echo "ANDROID_HOME=$HOME/android-sdk" >> $GITHUB_ENV
-          echo "ANDROID_SDK_ROOT=$HOME/android-sdk" >> $GITHUB_ENV
-          echo "$HOME/android-sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
-          
-          echo "Installing Android SDK from scratch"
-          # Install Android command line tools
-          SDK_TOOLS_VERSION="${{ steps.get_cmdline_tools_version.outputs.cmdline_tools_version }}"
-          SDK_TOOLS_FILE="commandlinetools-linux-${SDK_TOOLS_VERSION}_latest.zip"
-          
-          mkdir -p $HOME/android-sdk/cmdline-tools
-          cd $HOME/android-sdk/cmdline-tools
-          
-          wget -q "https://dl.google.com/android/repository/${SDK_TOOLS_FILE}"
-          unzip -q "${SDK_TOOLS_FILE}"
-          rm "${SDK_TOOLS_FILE}"
-          
-          # Move to expected location
-          mv cmdline-tools latest
-          
-          # Accept Android licenses
-          yes | $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses
-
-      - name: Get app version from libs.versions.toml
-        id: get_version
-        run: |
-          set -eu
-          VERSION=$(grep 'version-name = ' gradle/libs.versions.toml | cut -d '"' -f 2)
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-
-      - name: Extract application ID from gradle config
-        id: get_app_id
-        run: |
-          set -eu
-          # Extract applicationId dynamically from app/build.gradle.kts using grep and cut
-          APPLICATION_ID=$(grep "applicationId = " app/build.gradle.kts | cut -d '"' -f 2)
-          
-          echo "APPLICATION_ID=${APPLICATION_ID}" >> $GITHUB_ENV
-          echo "Extracted application ID: ${APPLICATION_ID}"
-
-      - name: build_release
-        env:
-          SYNCTHING_RELEASE_KEY_ALIAS: Syncthing-Fork
-          SIGNING_PASSWORD: '${{ secrets.SIGNING_PASSWORD }}'
-          SYNCTHING_RELEASE_STORE_FILE: '${{ runner.temp }}/signing-keystore.jks'
-        shell: bash
-        run: |
-          set -eu
-          echo '${{ secrets.SIGNING_KEYSTORE_JKS_BASE64 }}' | base64 -d > "$SYNCTHING_RELEASE_STORE_FILE"
-          java -version
-          ./gradlew --no-daemon lintRelease assembleRelease
-          rm "$SYNCTHING_RELEASE_STORE_FILE"
-
-      - name: prepare-artifacts
-        shell: bash
-        run: |
-          set -eu
-          #
-          mv "app/build/outputs/apk/release/app-release.apk" "app/build/outputs/apk/release/${{ env.APPLICATION_ID }}_release_v${{ env.VERSION }}.apk"
-
-      - uses: ncipollo/release-action@b7eabc95ff50cbeeedec83973935c8f306dfcd0b # v1.20.0
+      - name: Create draft release
+        uses: ncipollo/release-action@b7eabc95ff50cbeeedec83973935c8f306dfcd0b # v1.20.0
         with:
           tag: ${{ github.event.inputs.tag }}
-          artifacts: "app/build/outputs/apk/release/*.apk"
+          artifacts: "./artifacts/*.apk"
           artifactErrorsFailBuild: true
-          name: Syncthing-Lite v${{ env.VERSION }}
+          name: Syncthing-Lite ${{ github.event.inputs.tag }}
           bodyFile: "app/src/main/play/release-notes/en-US/default.txt"
           prerelease: ${{ contains(github.event.inputs.tag, '-rc.') }}
           draft: true
