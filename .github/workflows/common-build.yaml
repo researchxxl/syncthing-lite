@@ -1,0 +1,175 @@
+name: Common Build
+
+permissions:
+  contents: read
+
+on:
+  workflow_call:
+    inputs:
+      applicationId:
+        description: 'Application ID'
+        required: false
+        type: string
+      buildType:
+        description: 'Gradle build type'
+        required: true
+        type: string
+      checkoutRef:
+        description: 'Git ref'
+        required: false
+        type: string
+
+jobs:
+  build:
+    name: Build ${{ inputs.buildType }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Code checkout
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          submodules: true
+          fetch-depth: 0
+          ref: ${{ inputs.checkoutRef }}
+
+      - name: Override applicationId
+        if: ${{ inputs.applicationId != '' }}
+        run: |
+          set -eu
+          echo "Overriding applicationId with: ${{ inputs.applicationId }}"
+          sed -i 's|applicationId = ".*"|applicationId = "${{ inputs.applicationId }}"|' app/build.gradle.kts
+
+      - name: Set up Java
+        uses: actions/setup-java@f2beeb24e141e01a676f977032f5a29d81c9e27e # v5.1.0
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Cache Gradle and Android user home
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ${{ runner.temp }}/.gradle/caches
+            ${{ runner.temp }}/.gradle/wrapper
+            ${{ runner.temp }}/.android
+          key: ${{ runner.os }}-gradle-android-${{ inputs.buildType }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-android-${{ inputs.buildType }}-
+
+      - name: Set Gradle and Android user home environment variables
+        run: |
+          set -eu
+          echo "GRADLE_USER_HOME=${{ runner.temp }}/.gradle" >> $GITHUB_ENV
+          echo "ANDROID_USER_HOME=${{ runner.temp }}/.android" >> $GITHUB_ENV
+          
+          # Create directories to ensure they exist
+          mkdir -p "${{ runner.temp }}/.gradle"
+          mkdir -p "${{ runner.temp }}/.android"
+          
+          echo "Set GRADLE_USER_HOME to: ${{ runner.temp }}/.gradle"
+          echo "Set ANDROID_USER_HOME to: ${{ runner.temp }}/.android"
+
+      - name: Cache Android SDK
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/android-sdk
+          key: android-sdk-${{ runner.os }}
+
+      - name: Get Android cmdline-tools version from gradle catalog
+        id: get_cmdline_tools_version
+        run: |
+          set -eu
+          CMDLINE_TOOLS_VERSION=$(grep 'android-cmdline-tools = ' gradle/libs.versions.toml | cut -d '"' -f 2)
+          echo "cmdline_tools_version=${CMDLINE_TOOLS_VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Install Android SDK
+        run: |
+          set -eu
+          # Set environment variables (always needed regardless of cache status)
+          echo "ANDROID_HOME=$HOME/android-sdk" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$HOME/android-sdk" >> $GITHUB_ENV
+          echo "$HOME/android-sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          
+          # Check if SDK is already installed (from cache)
+          if [ -d "$HOME/android-sdk/cmdline-tools/latest" ]; then
+            echo "Android SDK found in cache - skipping installation"
+          else
+            echo "Installing Android SDK from scratch"
+            # Install Android command line tools
+            SDK_TOOLS_VERSION="${{ steps.get_cmdline_tools_version.outputs.cmdline_tools_version }}"
+            SDK_TOOLS_FILE="commandlinetools-linux-${SDK_TOOLS_VERSION}_latest.zip"
+            
+            mkdir -p $HOME/android-sdk/cmdline-tools
+            cd $HOME/android-sdk/cmdline-tools
+            
+            wget -q "https://dl.google.com/android/repository/${SDK_TOOLS_FILE}"
+            unzip -q "${SDK_TOOLS_FILE}"
+            rm "${SDK_TOOLS_FILE}"
+            
+            # Move to expected location
+            mv cmdline-tools latest
+            
+            # Accept Android licenses (only needed for fresh installation)
+            yes | $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses
+          fi
+
+      - name: Build app
+        run: |
+          set -eu
+          git config --global --add safe.directory '*'
+          ./gradlew --no-daemon lint${{ inputs.buildType }} assemble${{ inputs.buildType }}
+
+      - name: Extract application ID from gradle config
+        id: get_app_id
+        run: |
+          set -eu
+          APPLICATION_ID="$(grep "applicationId = " app/build.gradle.kts | cut -d '"' -f 2)"
+          echo "APPLICATION_ID=${APPLICATION_ID}" >> $GITHUB_ENV
+          echo "Extracted application ID: ${APPLICATION_ID}"
+
+      - name: Get app version from libs.versions.toml
+        id: get_version
+        run: |
+          set -eu
+          VERSION=$(grep 'version-name = ' gradle/libs.versions.toml | cut -d '"' -f 2)
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+
+      - name: Rename unsigned debug artifacts
+        if: ${{ inputs.buildType == 'Debug' }}
+        run: |
+          set -eu
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            COMMIT_HASH_LONG="${{ github.event.pull_request.head.sha }}"
+          else
+            COMMIT_HASH_LONG="${{ github.sha }}"
+          fi
+          COMMIT_HASH_SHORT=$(echo "${COMMIT_HASH_LONG}" | cut -c1-7)
+          cd "app/build/outputs/apk/debug"
+          mv "app-debug-unsigned.apk" "${{ env.APPLICATION_ID }}.debug_v${{ env.VERSION }}_${COMMIT_HASH_SHORT}.apk"
+
+      - name: Rename unsigned release artifacts
+        if: ${{ inputs.buildType == 'Release' }}
+        run: |
+          set -eu
+          cd "app/build/outputs/apk/release"
+          for UNSIGNED_APK in *.apk; do
+            ABI="$(basename -- "${UNSIGNED_APK}")"
+            ABI="${ABI%-release-unsigned.apk}"
+            ABI="${ABI#app-}"
+            ABI="${ABI#app}"
+            ABI="${ABI#universal}"
+            if [ -n "${ABI}" ]; then 
+                ABI="_${ABI}"
+            fi
+            UNSIGNED_APK_TARGET="${{ env.APPLICATION_ID }}_release_v${{ env.VERSION }}${ABI}.apk"
+            echo "Renaming ${UNSIGNED_APK} to ${UNSIGNED_APK_TARGET}"
+            mv "${UNSIGNED_APK}" "${UNSIGNED_APK_TARGET}"
+          done
+
+      - name: Upload unsigned artifacts
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: unsigned-${{ env.APPLICATION_ID }}
+          path: |
+            app/build/outputs/apk/*/*.apk
+            app/build/reports/**

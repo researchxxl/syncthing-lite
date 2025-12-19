@@ -49,6 +49,7 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             isMinifyEnabled = false
+            signingConfig = null
         }
         release {
             isMinifyEnabled = false
