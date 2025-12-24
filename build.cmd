@@ -5,9 +5,12 @@ setlocal enabledelayedexpansion
 :: 	call build && echo OK
 ::
 IF /I "%1" == "clean" SET PARAM_NO_BUILD_CACHE=--no-build-cache
+IF /I "%1" == "oneshot" SET PARAM_NO_BUILD_CACHE=--no-daemon
 ::
-call gradlew --no-daemon %PARAM_NO_BUILD_CACHE% --warning-mode all %* assembledebug
+call gradlew %PARAM_NO_BUILD_CACHE% --warning-mode all %* assembledebug
 SET GRADLEW_ERRORLEVEL=%ERRORLEVEL%
+::
+IF "%GRADLEW_ERRORLEVEL%" == "0" call "%ANDROID_HOME%\build-tools\35.0.0\apksigner.bat" sign --ks "%ANDROID_USER_HOME%\debug.keystore" --ks-key-alias androiddebugkey --ks-pass pass:android --key-pass pass:android --out "app\build\outputs\apk\debug\app-debug.apk" "app\build\outputs\apk\debug\app-debug-unsigned.apk"
 ::
 call scripts\debug\win\hide-folders-from-notepad++.cmd
 ::
