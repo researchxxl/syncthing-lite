@@ -1,7 +1,7 @@
 [versions]
 kotlin = "2.3.0"
 kotlinx-coroutines = "1.10.2"
-android-gradle-plugin = "8.13.2"
+android-gradle-plugin = "9.0.0"
 protobuf-lite = "4.33.4"
 protobuf-plugin = "0.9.6"
 ksp = "2.3.4"
@@ -33,7 +33,7 @@ collection-ktx = "1.5.0"
 preference-ktx = "1.2.1"
 
 # Third-party libraries
-aboutLibraries = "13.2.1"
+aboutLibraries = "14.0.0-a01"
 zxing-integration = "3.3.0"
 zxing-core = "3.3.0"
 zxing-android-embedded = "4.3.0"
@@ -93,7 +93,6 @@ commons-cli = { module = "commons-cli:commons-cli", version.ref = "commons-cli" 
 android-application = { id = "com.android.application", version.ref = "android-gradle-plugin" }
 android-library = { id = "com.android.library", version.ref = "android-gradle-plugin" }
 compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
-kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 protobuf = { id = "com.google.protobuf", version.ref = "protobuf-plugin" }
