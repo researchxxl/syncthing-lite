@@ -4,7 +4,7 @@ kotlinx-coroutines = "1.10.2"
 android-gradle-plugin = "9.0.0"
 protobuf-lite = "4.33.5"
 protobuf-plugin = "0.9.6"
-ksp = "2.3.4"
+ksp = "2.3.5"
 
 # Android SDK versions
 android-cmdline-tools = "11076708"
