@@ -17,7 +17,7 @@ version-code = "2000002"
 version-name = "2.0.0.2"
 
 # AndroidX and Google libraries
-activity = "1.12.3"
+activity = "1.12.4"
 appcompat = "1.7.1"
 compose-material3 = "1.4.0"
 compose-ui = "1.10.2"
