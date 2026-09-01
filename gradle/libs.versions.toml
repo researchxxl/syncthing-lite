@@ -2,7 +2,7 @@
 kotlin = "2.4.10"
 kotlinx-coroutines = "1.11.0"
 android-gradle-plugin = "9.3.1"
-protobuf-lite = "4.35.1"
+protobuf-lite = "4.36.0"
 protobuf-plugin = "0.10.0"
 ksp = "2.3.10"
 
