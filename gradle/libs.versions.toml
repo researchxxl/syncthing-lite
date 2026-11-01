@@ -40,7 +40,7 @@ zxing-android-embedded = "4.3.0"
 lz4 = "1.3.0"
 commons-codec = "1.22.1"
 commons-io = "2.22.0"
-gson = "2.14.0"
+gson = "2.15.0"
 bouncy-castle = "1.86"
 commons-cli = "1.11.0"
 
